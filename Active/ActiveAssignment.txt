@@ -1,0 +1,74 @@
+
+<# Header for input csv file
+RoleName,Scope,ServicePrincipalId
+#>
+
+# Input CSV files
+$inputCsvPath = "C:\Users\Public\AZRoleAssignment\AZroleassinmet.csv"
+
+# Output CSV files
+$successCsvFile = "C:\Users\Public\AZRoleAssignment\RoleAssignment_Success.csv"
+$failureCsvFile = "C:\Users\Public\AZRoleAssignment\RoleAssignment_Failure.csv"
+
+# Clear previous logs
+if (Test-Path $successCsvFile) { Remove-Item $successCsvFile }
+if (Test-Path $failureCsvFile) { Remove-Item $failureCsvFile }
+
+# Initialize arrays to hold log objects
+$successLogs = @()
+$failureLogs = @()
+
+# Connect to Azure if not already connected
+if (-not (Get-AzContext)) {
+    Connect-AzAccount
+}
+
+# Import assignments from CSV
+$assignments = Import-Csv -Path $inputCsvPath
+
+foreach ($assignment in $assignments) {
+    $roleName = $assignment.RoleName
+    $scope = $assignment.Scope
+    $servicePrincipalId = $assignment.ServicePrincipalId
+    $timestamp = Get-Date -Format o
+    try {
+        # Validate role name
+        $roleDefinition = Get-AzRoleDefinition -Name $roleName -ErrorAction Stop
+
+        # Assign role
+        New-AzRoleAssignment -ObjectId $servicePrincipalId -RoleDefinitionName $roleName -Scope $scope -ErrorAction Stop
+
+        # Success log
+        $successLogs += [PSCustomObject]@{
+            Timestamp           = $timestamp
+            RoleName            = $roleName
+            ServicePrincipalId  = $servicePrincipalId
+            Scope               = $scope
+            Status              = "Success"
+            ErrorMessage        = ""
+        }
+    }
+    catch {
+        # Failure log
+        $failureLogs += [PSCustomObject]@{
+            Timestamp           = $timestamp
+            RoleName            = $roleName
+            ServicePrincipalId  = $servicePrincipalId
+            Scope               = $scope
+            Status              = "Failure"
+            ErrorMessage        = $_.Exception.Message
+        }
+    }
+}
+
+# Export logs to CSV
+if ($successLogs.Count -gt 0) {
+    $successLogs | Export-Csv -Path $successCsvFile -NoTypeInformation -Encoding UTF8
+}
+if ($failureLogs.Count -gt 0) {
+    $failureLogs | Export-Csv -Path $failureCsvFile -NoTypeInformation -Encoding UTF8
+}
+
+Write-Output "Role assignment process completed."
+Write-Output "Success log file: $successCsvFile"
+Write-Output "Failure log file: $failureCsvFile"
