@@ -1,0 +1,88 @@
+<# Header for input csv file
+RoleName,SubscriptionId,ServicePrincipalId
+#>
+
+# Input CSV files
+$inputCsvPath = "C:\Users\Public\AZRoleAssignment\AZroleassinmet.csv"
+
+# Output CSV files
+$successCsvFile = "C:\Users\Public\AZRoleAssignment\RoleAssignment_Success.csv"
+$failureCsvFile = "C:\Users\Public\AZRoleAssignment\RoleAssignment_Failure.csv"
+
+# Clear previous logs
+if (Test-Path $successCsvFile) { Remove-Item $successCsvFile }
+if (Test-Path $failureCsvFile) { Remove-Item $failureCsvFile }
+
+# Initialize arrays to hold log objects
+$successLogs = @()
+$failureLogs = @()
+
+# Connect to Azure if not already connected
+if (-not (Get-AzContext)) {
+    Connect-AzAccount
+}
+
+# Import assignments from CSV
+$assignments = Import-Csv -Path $inputCsvPath
+
+foreach ($assignment in $assignments) {
+    $roleName = $assignment.RoleName
+    $subscriptionId = $assignment.SubscriptionId
+    $principalId = $assignment.ServicePrincipalId
+    $timestamp = Get-Date -Format o
+
+    # Construct scope from subscription ID
+    $scope = "/subscriptions/$subscriptionId"
+
+    try {
+        # Validate role name
+        $roleDefinition = Get-AzRoleDefinition -Name $roleName -ErrorAction Stop
+
+        # Create PIM eligible role assignment
+        New-AzRoleEligibilityScheduleRequest `
+            -Scope $scope `
+            -RoleDefinitionId $roleDefinition.Id `
+            -PrincipalId $principalId `
+            -RequestType AdminAssign `
+            -AssignmentState Eligible `
+            -Justification "Eligible $roleName access via script" `
+            -ScheduleType Once `
+            -StartDateTime (Get-Date).ToUniversalTime() `
+            -ExpirationType NoExpiration
+
+        # Success log
+        $successLogs += [PSCustomObject]@{
+            Timestamp           = $timestamp
+            RoleName            = $roleName
+            SubscriptionId      = $subscriptionId
+            ServicePrincipalId  = $principalId
+            Scope               = $scope
+            Status              = "Success"
+            ErrorMessage        = ""
+        }
+    }
+    catch {
+        # Failure log
+        $failureLogs += [PSCustomObject]@{
+            Timestamp           = $timestamp
+            RoleName            = $roleName
+            SubscriptionId      = $subscriptionId
+            ServicePrincipalId  = $principalId
+            Scope               = $scope
+            Status              = "Failure"
+            ErrorMessage        = $_.Exception.Message
+        }
+    }
+}
+
+# Export logs to CSV
+if ($successLogs.Count -gt 0) {
+    $successLogs | Export-Csv -Path $successCsvFile -NoTypeInformation -Encoding UTF8
+}
+if ($failureLogs.Count -gt 0) {
+    $failureLogs | Export-Csv -Path $failureCsvFile -NoTypeInformation -Encoding UTF8
+}
+
+Write-Output "Eligible role assignment process completed."
+Write-Output "Success log file: $successCsvFile"
+Write-Output "Failure log file: $failureCsvFile"
