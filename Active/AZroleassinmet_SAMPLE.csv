@@ -1,0 +1,11 @@
+RoleName,Scope,ServicePrincipalId
+Contributor,/subscriptions/12345678-1234-1234-1234-123456789012,87654321-4321-4321-4321-210987654321
+Reader,/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/myResourceGroup,11111111-2222-3333-4444-555555555555
+Owner,/subscriptions/12345678-1234-1234-1234-123456789012,22222222-3333-4444-5555-666666666666
+Storage Blob Data Contributor,/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/DataTeam/providers/Microsoft.Storage/storageAccounts/mystorageaccount,33333333-4444-5555-6666-777777777777
+Virtual Machine Contributor,/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/DevOps,44444444-5555-6666-7777-888888888888
+Key Vault Administrator,/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/Security/providers/Microsoft.KeyVault/vaults/mykeyvault,55555555-6666-7777-8888-999999999999
+SQL Server Contributor,/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/Database,66666666-7777-8888-9999-000000000000
+App Service Contributor,/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/WebApps/providers/Microsoft.Web/sites/mywebapp,77777777-8888-9999-0000-111111111111
+Monitor Reader,/subscriptions/12345678-1234-1234-1234-123456789012,88888888-9999-0000-1111-222222222222
+Network Contributor,/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/Networking,99999999-0000-1111-2222-333333333333
