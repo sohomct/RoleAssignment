@@ -1,0 +1,131 @@
+<#
+Header for input csv file
+RoleName,SubscriptionId,ServicePrincipalId
+#>
+
+# Input CSV files
+$inputCsvPath = "C:\Users\Public\AZRoleAssignment\AZroleassinmet.csv"
+# Output CSV files
+$successCsvFile = "C:\Users\Public\AZRoleAssignment\RoleAssignment_Success.csv"
+$failureCsvFile = "C:\Users\Public\AZRoleAssignment\RoleAssignment_Failure.csv"
+
+# Clear previous logs
+if (Test-Path $successCsvFile) { Remove-Item $successCsvFile }
+if (Test-Path $failureCsvFile) { Remove-Item $failureCsvFile }
+
+# Initialize arrays to hold log objects
+$successLogs = @()
+$failureLogs = @()
+
+# Connect to Azure if not already connected
+if (-not (Get-AzContext)) {
+    Connect-AzAccount
+}
+
+# -----------------------------------------------------------------------
+# Function: Set-PIMPermanentEligibility
+# Ensures the PIM role policy for a given role/scope allows permanent
+# (non-expiring) eligible assignments. If the policy currently requires
+# an expiration, it updates the policy to remove that requirement.
+# -----------------------------------------------------------------------
+function Set-PIMPermanentEligibility {
+    param(
+        [Parameter(Mandatory = $true)][string]$Scope,
+        [Parameter(Mandatory = $true)][string]$RoleDefinitionId
+    )
+
+    # Find the policy assignment for this role at this scope
+    $policyAssignment = Get-AzRoleManagementPolicyAssignment -Scope $Scope -ErrorAction Stop |
+        Where-Object { $_.RoleDefinitionId -eq $RoleDefinitionId }
+
+    if (-not $policyAssignment) {
+        throw "No PIM policy assignment found for RoleDefinitionId '$RoleDefinitionId' at scope '$Scope'."
+    }
+
+    $policy = Get-AzRoleManagementPolicy -Scope $Scope -Name $policyAssignment.PolicyId -ErrorAction Stop
+
+    # Find the eligibility expiration rule for end-user assignment
+    $expirationRule = $policy.Rules | Where-Object { $_.Id -eq "Expiration_EndUser_Assignment" }
+
+    if (-not $expirationRule) {
+        throw "Could not find 'Expiration_EndUser_Assignment' rule in policy '$($policy.Name)'."
+    }
+
+    if ($expirationRule.IsExpirationRequired -eq $true) {
+        $expirationRule.IsExpirationRequired = $false
+        Update-AzRoleManagementPolicy -Scope $Scope -Name $policy.Name -Rule $expirationRule -ErrorAction Stop
+        Write-Output "  -> PIM policy updated to allow permanent eligibility (Scope: $Scope)"
+    }
+    else {
+        Write-Output "  -> PIM policy already allows permanent eligibility (Scope: $Scope)"
+    }
+}
+
+# Import assignments from CSV
+$assignments = Import-Csv -Path $inputCsvPath
+
+foreach ($assignment in $assignments) {
+    $roleName       = $assignment.RoleName
+    $subscriptionId = $assignment.SubscriptionId
+    $principalId    = $assignment.ServicePrincipalId
+    $timestamp      = Get-Date -Format o
+
+    # Construct scope from subscription ID
+    $scope = "/subscriptions/$subscriptionId"
+
+    try {
+        # Validate role name
+        $roleDefinition = Get-AzRoleDefinition -Name $roleName -ErrorAction Stop
+
+        # Ensure the PIM policy allows permanent (non-expiring) eligibility
+        # before attempting the role assignment
+        Set-PIMPermanentEligibility -Scope $scope -RoleDefinitionId $roleDefinition.Id
+
+        # Create PIM eligible role assignment
+        New-AzRoleEligibilityScheduleRequest `
+            -Scope $scope `
+            -RoleDefinitionId $roleDefinition.Id `
+            -PrincipalId $principalId `
+            -RequestType AdminAssign `
+            -AssignmentState Eligible `
+            -Justification "Eligible $roleName access via script" `
+            -ScheduleType Once `
+            -StartDateTime (Get-Date).ToUniversalTime() `
+            -ExpirationType NoExpiration
+
+        # Success log
+        $successLogs += [PSCustomObject]@{
+            Timestamp          = $timestamp
+            RoleName           = $roleName
+            SubscriptionId     = $subscriptionId
+            ServicePrincipalId = $principalId
+            Scope              = $scope
+            Status             = "Success"
+            ErrorMessage       = ""
+        }
+    }
+    catch {
+        # Failure log
+        $failureLogs += [PSCustomObject]@{
+            Timestamp          = $timestamp
+            RoleName           = $roleName
+            SubscriptionId     = $subscriptionId
+            ServicePrincipalId = $principalId
+            Scope              = $scope
+            Status             = "Failure"
+            ErrorMessage       = $_.Exception.Message
+        }
+    }
+}
+
+# Export logs to CSV
+if ($successLogs.Count -gt 0) {
+    $successLogs | Export-Csv -Path $successCsvFile -NoTypeInformation -Encoding UTF8
+}
+if ($failureLogs.Count -gt 0) {
+    $failureLogs | Export-Csv -Path $failureCsvFile -NoTypeInformation -Encoding UTF8
+}
+
+Write-Output "Eligible role assignment process completed."
+Write-Output "Success log file: $successCsvFile"
+Write-Output "Failure log file: $failureCsvFile"
